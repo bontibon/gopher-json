@@ -11,7 +11,7 @@ import (
 // Preload adds json to the given Lua state's package.preload table. After it
 // has been preloaded, it can be loaded using require:
 //
-//  local json = require("json")
+//	local json = require("json")
 func Preload(L *lua.LState) {
 	L.PreloadModule("json", Loader)
 }
@@ -97,48 +97,62 @@ func (j jsonValue) MarshalJSON() (data []byte, err error) {
 
 		key, value := converted.Next(lua.LNil)
 
-		switch key.Type() {
-		case lua.LTNil: // empty table
+		if key.Type() == lua.LTNil { // empty table
 			data = []byte(`[]`)
-		case lua.LTNumber:
-			arr := make([]jsonValue, 0, converted.Len())
-			expectedKey := lua.LNumber(1)
-			for key != lua.LNil {
-				if key.Type() != lua.LTNumber {
-					err = errInvalidKeys
-					return
+		} else {
+			// Check for __type field
+			typeField := converted.RawGetString("__type")
+			if typeField.Type() == lua.LTString {
+				switch typeField.String() {
+				case "empty_map":
+					data = []byte(`{}`)
+					return data, nil
+				case "empty_array":
+					data = []byte(`[]`)
+					return data, nil
 				}
-				if expectedKey != key {
-					errValue := lua.LString(fmt.Sprintf("[%s] = %s", key.String(), value.String()))
-					arr = append(arr, jsonValue{errValue, j.visited})
-				} else {
-					arr = append(arr, jsonValue{value, j.visited})
-				}
-				expectedKey++
-				key, value = converted.Next(key)
 			}
-			data, err = json.Marshal(arr)
-		case lua.LTString:
-			obj := make(map[string]jsonValue)
-			for key != lua.LNil {
-				if key.Type() != lua.LTString {
-					err = errInvalidKeys
-					return
+
+			switch key.Type() {
+			case lua.LTNumber:
+				arr := make([]jsonValue, 0, converted.Len())
+				expectedKey := lua.LNumber(1)
+				for key != lua.LNil {
+					if key.Type() != lua.LTNumber {
+						err = errInvalidKeys
+						return nil, err
+					}
+					if expectedKey != key {
+						errValue := lua.LString(fmt.Sprintf("[%s] = %s", key.String(), value.String()))
+						arr = append(arr, jsonValue{errValue, j.visited})
+					} else {
+						arr = append(arr, jsonValue{value, j.visited})
+					}
+					expectedKey++
+					key, value = converted.Next(key)
 				}
-				obj[key.String()] = jsonValue{value, j.visited}
-				key, value = converted.Next(key)
+				data, err = json.Marshal(arr)
+			case lua.LTString:
+				obj := make(map[string]jsonValue)
+				for key != lua.LNil {
+					if key.Type() != lua.LTString {
+						err = errInvalidKeys
+						return nil, err
+					}
+					obj[key.String()] = jsonValue{value, j.visited}
+					key, value = converted.Next(key)
+				}
+				data, err = json.Marshal(obj)
+			default:
+				err = errInvalidKeys
 			}
-			data, err = json.Marshal(obj)
-		default:
-			err = errInvalidKeys
 		}
 	case *lua.LUserData:
 		data, err = json.Marshal(nil)
-		return
 	default:
 		err = invalidTypeError(j.LValue.Type())
 	}
-	return
+	return data, err
 }
 
 // Decode converts the JSON encoded data to Lua values.

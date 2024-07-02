@@ -62,6 +62,11 @@ func TestSimple(t *testing.T) {
 	assert(json.encode(a) == "[1,2,3,4,5]")
 
 	assert(json.encode(json) == nil)
+
+	local map = { __type = "empty_map" }
+	local array = { __type = "empty_array" }
+	assert(json.encode(map) == "{}")
+	assert(json.encode(array) == "[]")
 	`
 	s := lua.NewState()
 	defer s.Close()
